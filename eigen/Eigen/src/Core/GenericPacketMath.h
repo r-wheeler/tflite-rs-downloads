@@ -44,19 +44,20 @@ struct default_packet_traits
   enum {
     HasHalfPacket = 0,
 
-    HasAdd    = 1,
-    HasSub    = 1,
-    HasMul    = 1,
-    HasNegate = 1,
-    HasAbs    = 1,
-    HasArg    = 0,
-    HasAbs2   = 1,
-    HasMin    = 1,
-    HasMax    = 1,
-    HasConj   = 1,
+    HasAdd       = 1,
+    HasSub       = 1,
+    HasShift     = 1,
+    HasMul       = 1,
+    HasNegate    = 1,
+    HasAbs       = 1,
+    HasArg       = 0,
+    HasAbs2      = 1,
+    HasAbsDiff   = 0,
+    HasMin       = 1,
+    HasMax       = 1,
+    HasConj      = 1,
     HasSetLinear = 1,
-    HasBlend  = 0,
-    HasReduxp = 1,
+    HasBlend     = 0,
 
     HasDiv    = 0,
     HasSqrt   = 0,
@@ -83,8 +84,8 @@ struct default_packet_traits
     HasPolygamma = 0,
     HasErf = 0,
     HasErfc = 0,
-    HasI0e = 0,
-    HasI1e = 0,
+    HasNdtri = 0,
+    HasBessel = 0,
     HasIGamma = 0,
     HasIGammaDerA = 0,
     HasGammaSampleDerAlpha = 0,
@@ -92,9 +93,10 @@ struct default_packet_traits
     HasBetaInc = 0,
 
     HasRound  = 0,
+    HasRint   = 0,
     HasFloor  = 0,
     HasCeil   = 0,
-
+    HasCast   = 0, 
     HasSign   = 0
   };
 };
@@ -133,6 +135,22 @@ template <typename Src, typename Tgt> struct type_casting_traits {
   };
 };
 
+/** \internal Wrapper to ensure that multiple packet types can map to the same
+    same underlying vector type. */
+template<typename T, int unique_id = 0>
+struct eigen_packet_wrapper
+{
+  EIGEN_ALWAYS_INLINE operator T&() { return m_val; }
+  EIGEN_ALWAYS_INLINE operator const T&() const { return m_val; }
+  EIGEN_ALWAYS_INLINE eigen_packet_wrapper() {}
+  EIGEN_ALWAYS_INLINE eigen_packet_wrapper(const T &v) : m_val(v) {}
+  EIGEN_ALWAYS_INLINE eigen_packet_wrapper& operator=(const T &v) {
+    m_val = v;
+    return *this;
+  }
+
+  T m_val;
+};
 
 /** \internal \returns static_cast<TgtType>(a) (coeff-wise) */
 template <typename SrcPacket, typename TgtPacket>
@@ -160,6 +178,9 @@ preinterpret(const Packet& a); /* { return reinterpret_cast<const Target&>(a); }
 /** \internal \returns a + b (coeff-wise) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 padd(const Packet& a, const Packet& b) { return a+b; }
+// Avoid compiler warning for boolean algebra.
+template<> EIGEN_DEVICE_FUNC inline bool
+padd(const bool& a, const bool& b) { return a || b; }
 
 /** \internal \returns a - b (coeff-wise) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
@@ -169,14 +190,19 @@ psub(const Packet& a, const Packet& b) { return a-b; }
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pnegate(const Packet& a) { return -a; }
 
-/** \internal \returns conj(a) (coeff-wise) */
+template<> EIGEN_DEVICE_FUNC inline bool
+pnegate(const bool& a) { return !a; }
 
+/** \internal \returns conj(a) (coeff-wise) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pconj(const Packet& a) { return numext::conj(a); }
 
 /** \internal \returns a * b (coeff-wise) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pmul(const Packet& a, const Packet& b) { return a*b; }
+// Avoid compiler warning for boolean algebra.
+template<> EIGEN_DEVICE_FUNC inline bool
+pmul(const bool& a, const bool& b) { return a && b; }
 
 /** \internal \returns a / b (coeff-wise) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
@@ -193,10 +219,81 @@ pmax(const Packet& a, const Packet& b) { return numext::maxi(a, b); }
 /** \internal \returns the absolute value of \a a */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pabs(const Packet& a) { using std::abs; return abs(a); }
+template<> EIGEN_DEVICE_FUNC inline unsigned int
+pabs(const unsigned int& a) { return a; }
+template<> EIGEN_DEVICE_FUNC inline unsigned long
+pabs(const unsigned long& a) { return a; }
+template<> EIGEN_DEVICE_FUNC inline unsigned long long
+pabs(const unsigned long long& a) { return a; }
 
 /** \internal \returns the phase angle of \a a */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 parg(const Packet& a) { using numext::arg; return arg(a); }
+
+
+/** \internal \returns \a a logically shifted by N bits to the right */
+template<int N> EIGEN_DEVICE_FUNC inline int
+parithmetic_shift_right(const int& a) { return a >> N; }
+template<int N> EIGEN_DEVICE_FUNC inline long int
+parithmetic_shift_right(const long int& a) { return a >> N; }
+
+/** \internal \returns \a a arithmetically shifted by N bits to the right */
+template<int N> EIGEN_DEVICE_FUNC inline int
+plogical_shift_right(const int& a) { return static_cast<int>(static_cast<unsigned int>(a) >> N); }
+template<int N> EIGEN_DEVICE_FUNC inline long int
+plogical_shift_right(const long int& a) { return static_cast<long>(static_cast<unsigned long>(a) >> N); }
+
+/** \internal \returns \a a shifted by N bits to the left */
+template<int N> EIGEN_DEVICE_FUNC inline int
+plogical_shift_left(const int& a) { return a << N; }
+template<int N> EIGEN_DEVICE_FUNC inline long int
+plogical_shift_left(const long int& a) { return a << N; }
+
+/** \internal \returns the significant and exponent of the underlying floating point numbers
+  * See https://en.cppreference.com/w/cpp/numeric/math/frexp
+  */
+template <typename Packet>
+EIGEN_DEVICE_FUNC inline Packet pfrexp(const Packet& a, Packet& exponent) {
+  int exp;
+  EIGEN_USING_STD_MATH(frexp);
+  Packet result = frexp(a, &exp);
+  exponent = static_cast<Packet>(exp);
+  return result;
+}
+
+/** \internal \returns a * 2^exponent
+  * See https://en.cppreference.com/w/cpp/numeric/math/ldexp
+  */
+template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
+pldexp(const Packet &a, const Packet &exponent) {
+  EIGEN_USING_STD_MATH(ldexp);
+  return ldexp(a, static_cast<int>(exponent));
+}
+
+/** \internal \returns zero bits */
+template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
+pzero(const Packet& /*a*/) { Packet b; memset((void*)&b, 0, sizeof(b)); return b;}
+
+template<> EIGEN_DEVICE_FUNC inline float pzero<float>(const float& a) {
+  EIGEN_UNUSED_VARIABLE(a);
+  return 0.f;
+}
+
+template<> EIGEN_DEVICE_FUNC inline double pzero<double>(const double& a) {
+  EIGEN_UNUSED_VARIABLE(a);
+  return 0.;
+}
+
+/** \internal \returns one bits */
+template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
+ptrue(const Packet& /*a*/) { Packet b; memset((void*)&b, 0xff, sizeof(b)); return b;}
+
+template <typename RealScalar>
+EIGEN_DEVICE_FUNC inline std::complex<RealScalar> ptrue(const std::complex<RealScalar>& /*a*/) {
+  RealScalar b;
+  b = ptrue(b);
+  return std::complex<RealScalar>(b, b);
+}
 
 /** \internal \returns the bitwise and of \a a and \a b */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
@@ -210,59 +307,50 @@ por(const Packet& a, const Packet& b) { return a | b; }
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pxor(const Packet& a, const Packet& b) { return a ^ b; }
 
-/** \internal \returns the bitwise andnot of \a a and \a b */
+/** \internal \returns the bitwise and of \a a and not \a b */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pandnot(const Packet& a, const Packet& b) { return a & (~b); }
+pandnot(const Packet& a, const Packet& b) { return pand(a, pxor(ptrue(b), b)); }
 
-/** \internal \returns \a a shifted by N bits to the right */
-template<int N> EIGEN_DEVICE_FUNC inline int
-pshiftright(const int& a) { return a >> N; }
-template<int N> EIGEN_DEVICE_FUNC inline long int
-pshiftright(const long int& a) { return a >> N; }
-
-/** \internal \returns \a a shifted by N bits to the left */
-template<int N> EIGEN_DEVICE_FUNC inline int
-pshiftleft(const int& a) { return a << N; }
-template<int N> EIGEN_DEVICE_FUNC inline long int
-pshiftleft(const long int& a) { return a << N; }
-
-/** \internal \returns the significant and exponent of the underlying floating point numbers
-  * See https://en.cppreference.com/w/cpp/numeric/math/frexp
-  */
+/** \internal \returns a <= b as a bit mask */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pfrexp(const Packet &a, Packet &exponent) { return std::frexp(a,&exponent); }
+pcmp_le(const Packet& a, const Packet& b)  { return a<=b ? ptrue(a) : pzero(a); }
 
-/** \internal \returns a * 2^exponent
-  * See https://en.cppreference.com/w/cpp/numeric/math/ldexp
-  */
+/** \internal \returns a < b as a bit mask */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pldexp(const Packet &a, const Packet &exponent) { return std::ldexp(a,exponent); }
+pcmp_lt(const Packet& a, const Packet& b)  { return a<b ? ptrue(a) : pzero(a); }
 
-/** \internal \returns zeros */
+/** \internal \returns a == b as a bit mask */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pzero(const Packet& a) { return pxor(a,a); }
+pcmp_eq(const Packet& a, const Packet& b) { return a==b ? ptrue(a) : pzero(a); }
 
-/** \internal \returns bits of \a or \b according to the input bit mask \a mask */
+/** \internal \returns a < b or a==NaN or b==NaN as a bit mask */
+template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
+pcmp_lt_or_nan(const Packet& a, const Packet& b) { return a>=b ? pzero(a) : ptrue(a); } 
+
+/** \internal \returns \a or \b for each field in packet according to \mask */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pselect(const Packet& mask, const Packet& a, const Packet& b) {
   return por(pand(a,mask),pandnot(b,mask));
 }
 
-/** \internal \returns a <= b as a bit mask */
-template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pcmp_le(const Packet& a, const Packet& b); /* { return a<=b ? pnot(pxor(a,a)) : pxor(a,a); } */
+template<> EIGEN_DEVICE_FUNC inline float pselect<float>(
+    const float& cond, const float& a, const float&b) {
+  return numext::equal_strict(cond,0.f) ? b : a;
+}
 
-/** \internal \returns a < b as a bit mask */
-template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pcmp_lt(const Packet& a, const Packet& b); /* { return a<b  ? pnot(pxor(a,a)) : pxor(a,a); } */
+template<> EIGEN_DEVICE_FUNC inline double pselect<double>(
+    const double& cond, const double& a, const double& b) {
+  return numext::equal_strict(cond,0.) ? b : a;
+}
 
-/** \internal \returns a == b as a bit mask */
-template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pcmp_eq(const Packet& a, const Packet& b); /* { return a==b ? pnot(pxor(a,a)) : pxor(a,a); } */
+template<> EIGEN_DEVICE_FUNC inline bool pselect<bool>(
+    const bool& cond, const bool& a, const bool& b) {
+  return cond ? a : b;
+}
 
-/** \internal \returns a < b or a==NaN or b==NaN as a bit mask */
+/** \internal \returns the min of \a a and \a b  (coeff-wise) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pcmp_lt_or_nan(const Packet& a, const Packet& b); /* { return pnot(pcmp_le(b,a)); } */
+pabsdiff(const Packet& a, const Packet& b) { return pselect(pcmp_lt(a, b), psub(b, a), psub(a, b)); }
 
 /** \internal \returns a packet version of \a *from, from must be 16 bytes aligned */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
@@ -271,6 +359,14 @@ pload(const typename unpacket_traits<Packet>::type* from) { return *from; }
 /** \internal \returns a packet version of \a *from, (un-aligned load) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 ploadu(const typename unpacket_traits<Packet>::type* from) { return *from; }
+
+/** \internal \returns a packet version of \a *from, (un-aligned masked load)
+ * There is no generic implementation. We only have implementations for specialized
+ * cases. Generic case should not be called.
+ */
+template<typename Packet> EIGEN_DEVICE_FUNC inline
+typename enable_if<unpacket_traits<Packet>::masked_load_available, Packet>::type
+ploadu(const typename unpacket_traits<Packet>::type* from, typename unpacket_traits<Packet>::mask_t umask);
 
 /** \internal \returns a packet with constant coefficients \a a, e.g.: (a,a,a,a) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
@@ -348,6 +444,15 @@ template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pstore(
 template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pstoreu(Scalar* to, const Packet& from)
 {  (*to) = from; }
 
+/** \internal copy the packet \a from to \a *to, (un-aligned store with a mask)
+ * There is no generic implementation. We only have implementations for specialized
+ * cases. Generic case should not be called.
+ */
+template<typename Scalar, typename Packet>
+EIGEN_DEVICE_FUNC inline
+typename enable_if<unpacket_traits<Packet>::masked_store_available, void>::type
+pstoreu(Scalar* to, const Packet& from, typename unpacket_traits<Packet>::mask_t umask);
+
  template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline Packet pgather(const Scalar* from, Index /*stride*/)
  { return ploadu<Packet>(from); }
 
@@ -376,10 +481,6 @@ template<typename Scalar> EIGEN_DEVICE_FUNC inline void prefetch(const Scalar* a
 template<typename Packet> EIGEN_DEVICE_FUNC inline typename unpacket_traits<Packet>::type pfirst(const Packet& a)
 { return a; }
 
-/** \internal \returns a packet where the element i contains the sum of the packet of \a vec[i] */
-template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-preduxp(const Packet* vecs) { return vecs[0]; }
-
 /** \internal \returns the sum of the elements of \a a*/
 template<typename Packet> EIGEN_DEVICE_FUNC inline typename unpacket_traits<Packet>::type predux(const Packet& a)
 { return a; }
@@ -393,17 +494,38 @@ typename conditional<(unpacket_traits<Packet>::size%8)==0,typename unpacket_trai
 predux_half_dowto4(const Packet& a)
 { return a; }
 
-/** \internal \returns the product of the elements of \a a*/
+/** \internal \returns the product of the elements of \a a */
 template<typename Packet> EIGEN_DEVICE_FUNC inline typename unpacket_traits<Packet>::type predux_mul(const Packet& a)
 { return a; }
 
-/** \internal \returns the min of the elements of \a a*/
+/** \internal \returns the min of the elements of \a a */
 template<typename Packet> EIGEN_DEVICE_FUNC inline typename unpacket_traits<Packet>::type predux_min(const Packet& a)
 { return a; }
 
-/** \internal \returns the max of the elements of \a a*/
+/** \internal \returns the max of the elements of \a a */
 template<typename Packet> EIGEN_DEVICE_FUNC inline typename unpacket_traits<Packet>::type predux_max(const Packet& a)
 { return a; }
+
+/** \internal \returns true if all coeffs of \a a means "true"
+  * It is supposed to be called on values returned by pcmp_*.
+  */
+// not needed yet
+// template<typename Packet> EIGEN_DEVICE_FUNC inline bool predux_all(const Packet& a)
+// { return bool(a); }
+
+/** \internal \returns true if any coeffs of \a a means "true"
+  * It is supposed to be called on values returned by pcmp_*.
+  */
+template<typename Packet> EIGEN_DEVICE_FUNC inline bool predux_any(const Packet& a)
+{
+  // Dirty but generic implementation where "true" is assumed to be non 0 and all the sames.
+  // It is expected that "true" is either:
+  //  - Scalar(1)
+  //  - bits full of ones (NaN for floats),
+  //  - or first bit equals to 1 (1 for ints, smallest denormal for floats).
+  // For all these cases, taking the sum is just fine, and this boils down to a no-op for scalars.
+  return bool(predux(a));
+}
 
 /** \internal \returns the reversed elements of \a a*/
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet preverse(const Packet& a)
@@ -412,10 +534,7 @@ template<typename Packet> EIGEN_DEVICE_FUNC inline Packet preverse(const Packet&
 /** \internal \returns \a a with real and imaginary part flipped (for complex type only) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet pcplxflip(const Packet& a)
 {
-  // FIXME: uncomment the following in case we drop the internal imag and real functions.
-//   using std::imag;
-//   using std::real;
-  return Packet(imag(a),real(a));
+  return Packet(numext::imag(a),numext::real(a));
 }
 
 /**************************
@@ -424,43 +543,43 @@ template<typename Packet> EIGEN_DEVICE_FUNC inline Packet pcplxflip(const Packet
 
 /** \internal \returns the sine of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet psin(const Packet& a) { using std::sin; return sin(a); }
+Packet psin(const Packet& a) { EIGEN_USING_STD_MATH(sin); return sin(a); }
 
 /** \internal \returns the cosine of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet pcos(const Packet& a) { using std::cos; return cos(a); }
+Packet pcos(const Packet& a) { EIGEN_USING_STD_MATH(cos); return cos(a); }
 
 /** \internal \returns the tan of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet ptan(const Packet& a) { using std::tan; return tan(a); }
+Packet ptan(const Packet& a) { EIGEN_USING_STD_MATH(tan); return tan(a); }
 
 /** \internal \returns the arc sine of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet pasin(const Packet& a) { using std::asin; return asin(a); }
+Packet pasin(const Packet& a) { EIGEN_USING_STD_MATH(asin); return asin(a); }
 
 /** \internal \returns the arc cosine of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet pacos(const Packet& a) { using std::acos; return acos(a); }
+Packet pacos(const Packet& a) { EIGEN_USING_STD_MATH(acos); return acos(a); }
 
 /** \internal \returns the arc tangent of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet patan(const Packet& a) { using std::atan; return atan(a); }
+Packet patan(const Packet& a) { EIGEN_USING_STD_MATH(atan); return atan(a); }
 
 /** \internal \returns the hyperbolic sine of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet psinh(const Packet& a) { using std::sinh; return sinh(a); }
+Packet psinh(const Packet& a) { EIGEN_USING_STD_MATH(sinh); return sinh(a); }
 
 /** \internal \returns the hyperbolic cosine of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet pcosh(const Packet& a) { using std::cosh; return cosh(a); }
+Packet pcosh(const Packet& a) { EIGEN_USING_STD_MATH(cosh); return cosh(a); }
 
 /** \internal \returns the hyperbolic tan of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet ptanh(const Packet& a) { using std::tanh; return tanh(a); }
+Packet ptanh(const Packet& a) { EIGEN_USING_STD_MATH(tanh); return tanh(a); }
 
 /** \internal \returns the exp of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet pexp(const Packet& a) { using std::exp; return exp(a); }
+Packet pexp(const Packet& a) { EIGEN_USING_STD_MATH(exp); return exp(a); }
 
 /** \internal \returns the expm1 of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
@@ -468,7 +587,7 @@ Packet pexpm1(const Packet& a) { return numext::expm1(a); }
 
 /** \internal \returns the log of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet plog(const Packet& a) { using std::log; return log(a); }
+Packet plog(const Packet& a) { EIGEN_USING_STD_MATH(log); return log(a); }
 
 /** \internal \returns the log1p of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
@@ -476,11 +595,11 @@ Packet plog1p(const Packet& a) { return numext::log1p(a); }
 
 /** \internal \returns the log10 of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet plog10(const Packet& a) { using std::log10; return log10(a); }
+Packet plog10(const Packet& a) { EIGEN_USING_STD_MATH(log10); return log10(a); }
 
 /** \internal \returns the square-root of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
-Packet psqrt(const Packet& a) { using std::sqrt; return sqrt(a); }
+Packet psqrt(const Packet& a) { EIGEN_USING_STD_MATH(sqrt); return sqrt(a); }
 
 /** \internal \returns the reciprocal square-root of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
@@ -495,6 +614,11 @@ Packet pround(const Packet& a) { using numext::round; return round(a); }
 /** \internal \returns the floor of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
 Packet pfloor(const Packet& a) { using numext::floor; return floor(a); }
+
+/** \internal \returns the rounded value of \a a (coeff-wise) with current
+ * rounding mode */
+template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
+Packet print(const Packet& a) { using numext::rint; return rint(a); }
 
 /** \internal \returns the ceil of \a a (coeff-wise) */
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
@@ -552,35 +676,6 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet ploadt_ro(const typename unpacket_t
   return ploadt<Packet, LoadMode>(from);
 }
 
-/** \internal default implementation of palign() allowing partial specialization */
-template<int Offset,typename PacketType>
-struct palign_impl
-{
-  // by default data are aligned, so there is nothing to be done :)
-  static inline void run(PacketType&, const PacketType&) {}
-};
-
-/** \internal update \a first using the concatenation of the packet_size minus \a Offset last elements
-  * of \a first and \a Offset first elements of \a second.
-  * 
-  * This function is currently only used to optimize matrix-vector products on unligned matrices.
-  * It takes 2 packets that represent a contiguous memory array, and returns a packet starting
-  * at the position \a Offset. For instance, for packets of 4 elements, we have:
-  *  Input:
-  *  - first = {f0,f1,f2,f3}
-  *  - second = {s0,s1,s2,s3}
-  * Output: 
-  *   - if Offset==0 then {f0,f1,f2,f3}
-  *   - if Offset==1 then {f1,f2,f3,s0}
-  *   - if Offset==2 then {f2,f3,s0,s1}
-  *   - if Offset==3 then {f3,s0,s1,s3}
-  */
-template<int Offset,typename PacketType>
-inline void palign(PacketType& first, const PacketType& second)
-{
-  palign_impl<Offset,PacketType>::run(first,second);
-}
-
 /***************************************************************************
 * Fast complex products (GCC generates a function call which is very slow)
 ***************************************************************************/
@@ -589,10 +684,10 @@ inline void palign(PacketType& first, const PacketType& second)
 #if !defined(EIGEN_GPUCC)
 
 template<> inline std::complex<float> pmul(const std::complex<float>& a, const std::complex<float>& b)
-{ return std::complex<float>(real(a)*real(b) - imag(a)*imag(b), imag(a)*real(b) + real(a)*imag(b)); }
+{ return std::complex<float>(a.real()*b.real() - a.imag()*b.imag(), a.imag()*b.real() + a.real()*b.imag()); }
 
 template<> inline std::complex<double> pmul(const std::complex<double>& a, const std::complex<double>& b)
-{ return std::complex<double>(real(a)*real(b) - imag(a)*imag(b), imag(a)*real(b) + real(a)*imag(b)); }
+{ return std::complex<double>(a.real()*b.real() - a.imag()*b.imag(), a.imag()*b.real() + a.real()*b.imag()); }
 
 #endif
 
@@ -621,34 +716,6 @@ template <size_t N> struct Selector {
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pblend(const Selector<unpacket_traits<Packet>::size>& ifPacket, const Packet& thenPacket, const Packet& elsePacket) {
   return ifPacket.select[0] ? thenPacket : elsePacket;
-}
-
-/** \internal \returns \a a with the first coefficient replaced by the scalar b */
-template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pinsertfirst(const Packet& a, typename unpacket_traits<Packet>::type b)
-{
-  // Default implementation based on pblend.
-  // It must be specialized for higher performance.
-  Selector<unpacket_traits<Packet>::size> mask;
-  mask.select[0] = true;
-  // This for loop should be optimized away by the compiler.
-  for(Index i=1; i<unpacket_traits<Packet>::size; ++i)
-    mask.select[i] = false;
-  return pblend(mask, pset1<Packet>(b), a);
-}
-
-/** \internal \returns \a a with the last coefficient replaced by the scalar b */
-template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
-pinsertlast(const Packet& a, typename unpacket_traits<Packet>::type b)
-{
-  // Default implementation based on pblend.
-  // It must be specialized for higher performance.
-  Selector<unpacket_traits<Packet>::size> mask;
-  // This for loop should be optimized away by the compiler.
-  for(Index i=0; i<unpacket_traits<Packet>::size-1; ++i)
-    mask.select[i] = false;
-  mask.select[unpacket_traits<Packet>::size-1] = true;
-  return pblend(mask, pset1<Packet>(b), a);
 }
 
 /***************************************************************************

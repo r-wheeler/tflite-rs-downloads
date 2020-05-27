@@ -127,7 +127,7 @@ struct packet_traits<std::complex<float> > : default_packet_traits {
 template <>
 struct unpacket_traits<Packet2cf> {
   typedef std::complex<float> type;
-  enum { size = 2, alignment = Aligned16 };
+  enum { size = 2, alignment = Aligned16, vectorizable=true, masked_load_available=false, masked_store_available=false };
   typedef Packet2cf half;
 };
 
@@ -298,35 +298,12 @@ EIGEN_STRONG_INLINE std::complex<float> predux<Packet2cf>(const Packet2cf& a) {
 }
 
 template <>
-EIGEN_STRONG_INLINE Packet2cf preduxp<Packet2cf>(const Packet2cf* vecs) {
-  EIGEN_MSA_DEBUG;
-
-  Packet4f sum1, sum2, sum;
-
-  // Add the first two 64-bit float32x2_t of vecs[0]
-  sum1 = (Packet4f)__builtin_msa_ilvr_d((v2i64)vecs[1].v, (v2i64)vecs[0].v);
-  sum2 = (Packet4f)__builtin_msa_ilvl_d((v2i64)vecs[1].v, (v2i64)vecs[0].v);
-  sum = padd(sum1, sum2);
-
-  return Packet2cf(sum);
-}
-
-template <>
 EIGEN_STRONG_INLINE std::complex<float> predux_mul<Packet2cf>(const Packet2cf& a) {
   EIGEN_MSA_DEBUG;
 
   return std::complex<float>((a.v[0] * a.v[2]) - (a.v[1] * a.v[3]),
                              (a.v[0] * a.v[3]) + (a.v[1] * a.v[2]));
 }
-
-template <int Offset>
-struct palign_impl<Offset, Packet2cf> {
-  EIGEN_STRONG_INLINE static void run(Packet2cf& first, const Packet2cf& second) {
-    if (Offset == 1) {
-      first.v = (Packet4f)__builtin_msa_sldi_b((v16i8)second.v, (v16i8)first.v, Offset * 8);
-    }
-  }
-};
 
 template <>
 struct conj_helper<Packet2cf, Packet2cf, false, true> {
@@ -500,7 +477,7 @@ struct packet_traits<std::complex<double> > : default_packet_traits {
 template <>
 struct unpacket_traits<Packet1cd> {
   typedef std::complex<double> type;
-  enum { size = 1, alignment = Aligned16 };
+  enum { size = 1, alignment = Aligned16, vectorizable=true, masked_load_available=false, masked_store_available=false };
   typedef Packet1cd half;
 };
 
@@ -661,27 +638,11 @@ EIGEN_STRONG_INLINE std::complex<double> predux<Packet1cd>(const Packet1cd& a) {
 }
 
 template <>
-EIGEN_STRONG_INLINE Packet1cd preduxp<Packet1cd>(const Packet1cd* vecs) {
-  EIGEN_MSA_DEBUG;
-
-  return vecs[0];
-}
-
-template <>
 EIGEN_STRONG_INLINE std::complex<double> predux_mul<Packet1cd>(const Packet1cd& a) {
   EIGEN_MSA_DEBUG;
 
   return pfirst(a);
 }
-
-template <int Offset>
-struct palign_impl<Offset, Packet1cd> {
-  static EIGEN_STRONG_INLINE void run(Packet1cd& /*first*/, const Packet1cd& /*second*/) {
-    // FIXME is it sure we never have to align a Packet1cd?
-    // Even though a std::complex<double> has 16 bytes, it is not necessarily aligned on a 16 bytes
-    // boundary...
-  }
-};
 
 template <>
 struct conj_helper<Packet1cd, Packet1cd, false, true> {

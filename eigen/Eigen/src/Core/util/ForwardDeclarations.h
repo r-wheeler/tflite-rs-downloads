@@ -47,11 +47,7 @@ template<typename T> struct NumTraits;
 template<typename Derived> struct EigenBase;
 template<typename Derived> class DenseBase;
 template<typename Derived> class PlainObjectBase;
-
-
-template<typename Derived,
-         int Level = internal::accessors_level<Derived>::value >
-class DenseCoeffsBase;
+template<typename Derived, int Level> class DenseCoeffsBase;
 
 template<typename _Scalar, int _Rows, int _Cols,
          int _Options = AutoAlign |
@@ -114,7 +110,7 @@ template<typename _IndicesType> class TranspositionsWrapper;
 template<typename Derived,
          int Level = internal::accessors_level<Derived>::has_write_access ? WriteAccessors : ReadOnlyAccessors
 > class MapBase;
-template<int InnerStrideAtCompileTime, int OuterStrideAtCompileTime> class Stride;
+template<int OuterStrideAtCompileTime, int InnerStrideAtCompileTime> class Stride;
 template<int Value = Dynamic> class InnerStride;
 template<int Value = Dynamic> class OuterStride;
 template<typename MatrixType, int MapOptions=Unaligned, typename StrideType = Stride<0,0> > class Map;
@@ -138,6 +134,7 @@ namespace internal {
 template<typename XprType> class generic_randaccess_stl_iterator;
 template<typename XprType> class pointer_based_stl_iterator;
 template<typename XprType, DirectionType Direction> class subvector_stl_iterator;
+template<typename XprType, DirectionType Direction> class subvector_stl_reverse_iterator;
 template<typename DecompositionType> struct kernel_retval_base;
 template<typename DecompositionType> struct kernel_retval;
 template<typename DecompositionType> struct image_retval_base;
@@ -191,6 +188,7 @@ template<typename Scalar> struct scalar_real_op;
 template<typename Scalar> struct scalar_imag_op;
 template<typename Scalar> struct scalar_abs_op;
 template<typename Scalar> struct scalar_abs2_op;
+template<typename LhsScalar,typename RhsScalar=LhsScalar> struct scalar_absolute_difference_op;
 template<typename Scalar> struct scalar_sqrt_op;
 template<typename Scalar> struct scalar_rsqrt_op;
 template<typename Scalar> struct scalar_exp_op;
@@ -218,10 +216,26 @@ template<typename Scalar> struct scalar_lgamma_op;
 template<typename Scalar> struct scalar_digamma_op;
 template<typename Scalar> struct scalar_erf_op;
 template<typename Scalar> struct scalar_erfc_op;
+template<typename Scalar> struct scalar_ndtri_op;
 template<typename Scalar> struct scalar_igamma_op;
 template<typename Scalar> struct scalar_igammac_op;
 template<typename Scalar> struct scalar_zeta_op;
 template<typename Scalar> struct scalar_betainc_op;
+
+// Bessel functions in SpecialFunctions module
+template<typename Scalar> struct scalar_bessel_i0_op;
+template<typename Scalar> struct scalar_bessel_i0e_op;
+template<typename Scalar> struct scalar_bessel_i1_op;
+template<typename Scalar> struct scalar_bessel_i1e_op;
+template<typename Scalar> struct scalar_bessel_j0_op;
+template<typename Scalar> struct scalar_bessel_y0_op;
+template<typename Scalar> struct scalar_bessel_j1_op;
+template<typename Scalar> struct scalar_bessel_y1_op;
+template<typename Scalar> struct scalar_bessel_k0_op;
+template<typename Scalar> struct scalar_bessel_k0e_op;
+template<typename Scalar> struct scalar_bessel_k1_op;
+template<typename Scalar> struct scalar_bessel_k1e_op;
+
 
 } // end namespace internal
 
@@ -260,6 +274,7 @@ template<typename MatrixType> class HouseholderQR;
 template<typename MatrixType> class ColPivHouseholderQR;
 template<typename MatrixType> class FullPivHouseholderQR;
 template<typename MatrixType> class CompleteOrthogonalDecomposition;
+template<typename MatrixType> class SVDBase;
 template<typename MatrixType, int QRPreconditioner = ColPivHouseholderQRPreconditioner> class JacobiSVD;
 template<typename MatrixType> class BDCSVD;
 template<typename MatrixType, int UpLo = Lower> class LLT;

@@ -173,7 +173,8 @@ template<typename T> struct GenericNumTraits
 
   EIGEN_DEVICE_FUNC
   static inline T lowest()  {
-    return IsInteger ? (numext::numeric_limits<T>::min)() : (-(numext::numeric_limits<T>::max)());
+    return IsInteger ? (numext::numeric_limits<T>::min)()
+                     : static_cast<T>(-(numext::numeric_limits<T>::max)());
   }
 
   EIGEN_DEVICE_FUNC
@@ -282,6 +283,8 @@ private:
 
 // Empty specialization for void to allow template specialization based on NumTraits<T>::Real with T==void and SFINAE.
 template<> struct NumTraits<void> {};
+
+template<> struct NumTraits<bool> : GenericNumTraits<bool> {};
 
 } // end namespace Eigen
 

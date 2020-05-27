@@ -1,6 +1,6 @@
 project(Eigen3)
 
-cmake_minimum_required(VERSION 2.8.5)
+cmake_minimum_required(VERSION 2.8.11)
 
 # guard against in-source builds
 
@@ -20,13 +20,6 @@ if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
-string(TOLOWER "${CMAKE_BUILD_TYPE}" cmake_build_type_tolower)
-if(    NOT cmake_build_type_tolower STREQUAL "debug"
-   AND NOT cmake_build_type_tolower STREQUAL "release"
-   AND NOT cmake_build_type_tolower STREQUAL "relwithdebinfo")
-  message(FATAL_ERROR "Unknown build type \"${CMAKE_BUILD_TYPE}\". Allowed values are Debug, Release, RelWithDebInfo (case-insensitive).")
-endif()
-
 
 #############################################################################
 # retrieve version information                                               #
@@ -42,26 +35,24 @@ string(REGEX MATCH "define[ \t]+EIGEN_MINOR_VERSION[ \t]+([0-9]+)" _eigen_minor_
 set(EIGEN_MINOR_VERSION "${CMAKE_MATCH_1}")
 set(EIGEN_VERSION_NUMBER ${EIGEN_WORLD_VERSION}.${EIGEN_MAJOR_VERSION}.${EIGEN_MINOR_VERSION})
 
-# if we are not in a mercurial clone
-if(IS_DIRECTORY ${CMAKE_SOURCE_DIR}/.hg)
-  # if the mercurial program is absent or this will leave the EIGEN_HG_CHANGESET string empty,
+# if we are not in a git clone
+if(IS_DIRECTORY ${CMAKE_SOURCE_DIR}/.git)
+  # if the git program is absent or this will leave the EIGEN_GIT_REVNUM string empty,
   # but won't stop CMake.
-  execute_process(COMMAND hg tip -R ${CMAKE_SOURCE_DIR} OUTPUT_VARIABLE EIGEN_HGTIP_OUTPUT)
-  execute_process(COMMAND hg branch -R ${CMAKE_SOURCE_DIR} OUTPUT_VARIABLE EIGEN_BRANCH_OUTPUT)
+  execute_process(COMMAND git ls-remote --refs -q ${CMAKE_SOURCE_DIR} HEAD OUTPUT_VARIABLE EIGEN_GIT_OUTPUT)
 endif()
 
-# if this is the default (aka development) branch, extract the mercurial changeset number from the hg tip output...
-if(EIGEN_BRANCH_OUTPUT MATCHES "default")
-string(REGEX MATCH "^changeset: *[0-9]*:([0-9;a-f]+).*" EIGEN_HG_CHANGESET_MATCH "${EIGEN_HGTIP_OUTPUT}")
-set(EIGEN_HG_CHANGESET "${CMAKE_MATCH_1}")
-endif(EIGEN_BRANCH_OUTPUT MATCHES "default")
+# extract the git rev number from the git output...
+if(EIGEN_GIT_OUTPUT)
+string(REGEX MATCH "^([0-9;a-f]+).*" EIGEN_GIT_CHANGESET_MATCH "${EIGEN_GIT_OUTPUT}")
+set(EIGEN_GIT_REVNUM "${CMAKE_MATCH_1}")
+endif()
 #...and show it next to the version number
-if(EIGEN_HG_CHANGESET)
-  set(EIGEN_VERSION "${EIGEN_VERSION_NUMBER} (mercurial changeset ${EIGEN_HG_CHANGESET})")
-else(EIGEN_HG_CHANGESET)
+if(EIGEN_GIT_REVNUM)
+  set(EIGEN_VERSION "${EIGEN_VERSION_NUMBER} (git rev ${EIGEN_GIT_REVNUM})")
+else()
   set(EIGEN_VERSION "${EIGEN_VERSION_NUMBER}")
-endif(EIGEN_HG_CHANGESET)
-
+endif()
 
 include(CheckCXXCompilerFlag)
 include(GNUInstallDirs)
@@ -79,7 +70,7 @@ macro(ei_add_cxx_compiler_flag FLAG)
   if(COMPILER_SUPPORT_${SFLAG})
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAG}")
   endif()
-endmacro(ei_add_cxx_compiler_flag)
+endmacro()
 
 check_cxx_compiler_flag("-std=c++11" EIGEN_COMPILER_SUPPORT_CPP11)
 
@@ -319,7 +310,7 @@ if(NOT MSVC)
     endif()
   endif()
 
-else(NOT MSVC)
+else()
 
   # C4127 - conditional expression is constant
   # C4714 - marked as __forceinline not inlined (I failed to deactivate it selectively)
@@ -347,9 +338,9 @@ else(NOT MSVC)
     if(NOT CMAKE_CL_64)
       # arch is not supported on 64 bit systems, SSE is enabled automatically.
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:SSE2")
-    endif(NOT CMAKE_CL_64)
+    endif()
     message(STATUS "Enabling SSE2 in tests/examples")
-  endif(EIGEN_TEST_SSE2)
+  endif()
 
   option(EIGEN_TEST_AVX "Enable/Disable AVX in tests/examples" OFF)
   if(EIGEN_TEST_AVX)
@@ -363,7 +354,7 @@ else(NOT MSVC)
     message(STATUS "Enabling FMA/AVX2 in tests/examples")
   endif()
 
-endif(NOT MSVC)
+endif()
 
 option(EIGEN_TEST_NO_EXPLICIT_VECTORIZATION "Disable explicit vectorization in tests/examples" OFF)
 option(EIGEN_TEST_X87 "Force using X87 instructions. Implies no vectorization." OFF)
@@ -440,9 +431,9 @@ macro(ei_add_target_property target prop value)
   # if the property wasn't previously set, ${previous} is now "previous-NOTFOUND" which cmake allows catching with plain if()
   if(NOT previous)
     set(previous "")
-  endif(NOT previous)
+  endif()
   set_target_properties(${target} PROPERTIES ${prop} "${previous} ${value}")
-endmacro(ei_add_target_property)
+endmacro()
 
 install(FILES
   signature_of_eigen3_matrix_library
@@ -456,7 +447,7 @@ if(EIGEN_BUILD_PKGCONFIG)
         )
 endif()
 
-add_subdirectory(Eigen)
+install(DIRECTORY Eigen DESTINATION ${INCLUDE_INSTALL_DIR} COMPONENT Devel)
 
 add_subdirectory(doc EXCLUDE_FROM_ALL)
 
@@ -469,6 +460,8 @@ if(BUILD_TESTING)
   else()
     add_subdirectory(test EXCLUDE_FROM_ALL)
   endif()
+
+  add_subdirectory(failtest)
 endif()
 
 if(EIGEN_LEAVE_TEST_IN_ALL_TARGET)
@@ -487,11 +480,26 @@ if(EIGEN_TEST_SYCL)
   if(EIGEN_SYCL_TRISYCL)
     message(STATUS "Using triSYCL")
     include(FindTriSYCL)
-  else(EIGEN_SYCL_TRISYCL)
+  else()
     message(STATUS "Using ComputeCPP SYCL")
     include(FindComputeCpp)
+    set(COMPUTECPP_DRIVER_DEFAULT_VALUE OFF)
+    if (NOT MSVC)
+      set(COMPUTECPP_DRIVER_DEFAULT_VALUE ON)
+    endif()
+    option(COMPUTECPP_USE_COMPILER_DRIVER
+      "Use ComputeCpp driver instead of a 2 steps compilation"
+      ${COMPUTECPP_DRIVER_DEFAULT_VALUE}
+    )
   endif(EIGEN_SYCL_TRISYCL)
-endif(EIGEN_TEST_SYCL)
+  option(EIGEN_DONT_VECTORIZE_SYCL "Don't use vectorisation in the SYCL tests." OFF)
+  if(EIGEN_DONT_VECTORIZE_SYCL)
+    message(STATUS "Disabling SYCL vectorization in tests/examples")
+    # When disabling SYCL vectorization, also disable Eigen default vectorization
+    add_definitions(-DEIGEN_DONT_VECTORIZE=1)
+    add_definitions(-DEIGEN_DONT_VECTORIZE_SYCL=1)
+  endif()
+endif()
 
 add_subdirectory(unsupported)
 
@@ -503,11 +511,11 @@ add_subdirectory(scripts EXCLUDE_FROM_ALL)
 # TODO: consider also replacing EIGEN_BUILD_BTL by a custom target "make btl"?
 if(EIGEN_BUILD_BTL)
   add_subdirectory(bench/btl EXCLUDE_FROM_ALL)
-endif(EIGEN_BUILD_BTL)
+endif()
 
 if(NOT WIN32)
   add_subdirectory(bench/spbench EXCLUDE_FROM_ALL)
-endif(NOT WIN32)
+endif()
 
 configure_file(scripts/cdashtesting.cmake.in cdashtesting.cmake @ONLY)
 
@@ -518,11 +526,6 @@ endif()
 message(STATUS "")
 message(STATUS "Configured Eigen ${EIGEN_VERSION_NUMBER}")
 message(STATUS "")
-
-option(EIGEN_FAILTEST "Enable failtests." OFF)
-if(EIGEN_FAILTEST)
-  add_subdirectory(failtest)
-endif()
 
 string(TOLOWER "${CMAKE_GENERATOR}" cmake_generator_tolower)
 if(cmake_generator_tolower MATCHES "makefile")
@@ -540,8 +543,10 @@ if(cmake_generator_tolower MATCHES "makefile")
   message(STATUS "              |   Or:")
   message(STATUS "              |     cmake . -DINCLUDE_INSTALL_DIR=yourdir")
   message(STATUS "make doc      | Generate the API documentation, requires Doxygen & LaTeX")
-  message(STATUS "make check    | Build and run the unit-tests. Read this page:")
-  message(STATUS "              |   http://eigen.tuxfamily.org/index.php?title=Tests")
+  if(BUILD_TESTING)
+    message(STATUS "make check    | Build and run the unit-tests. Read this page:")
+    message(STATUS "              |   http://eigen.tuxfamily.org/index.php?title=Tests")
+  endif()
   message(STATUS "make blas     | Build BLAS library (not the same thing as Eigen)")
   message(STATUS "make uninstall| Removes files installed by make install")
   message(STATUS "--------------+--------------------------------------------------------------")
@@ -568,7 +573,6 @@ if (NOT CMAKE_VERSION VERSION_LESS 3.0)
   # Imported target support
   add_library (eigen INTERFACE)
   add_library (Eigen3::Eigen ALIAS eigen)
-
   target_compile_definitions (eigen INTERFACE ${EIGEN_DEFINITIONS})
   target_include_directories (eigen INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -607,7 +611,7 @@ if (NOT CMAKE_VERSION VERSION_LESS 3.0)
 
   install (EXPORT Eigen3Targets NAMESPACE Eigen3:: DESTINATION ${CMAKEPACKAGE_INSTALL_DIR})
 
-else (NOT CMAKE_VERSION VERSION_LESS 3.0)
+else ()
   # Fallback to legacy Eigen3Config.cmake without the imported target
 
   # If CMakePackageConfigHelpers module is available (CMake >= 2.8.8)
@@ -637,7 +641,7 @@ else (NOT CMAKE_VERSION VERSION_LESS 3.0)
                                     VERSION ${EIGEN_VERSION_NUMBER}
                                     COMPATIBILITY SameMajorVersion )
 
-endif (NOT CMAKE_VERSION VERSION_LESS 3.0)
+endif ()
 
 install ( FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/UseEigen3.cmake
                 ${CMAKE_CURRENT_BINARY_DIR}/Eigen3Config.cmake

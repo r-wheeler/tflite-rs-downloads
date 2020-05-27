@@ -32,7 +32,7 @@ template <typename tScalar, MapOrder tOrder>
 class MatrixMap {
  public:
   typedef tScalar Scalar;
-  static const MapOrder kOrder = tOrder;
+  static constexpr MapOrder kOrder = tOrder;
 
  protected:
   Scalar* data_;  // not owned.
@@ -84,7 +84,7 @@ template <typename tScalar, VectorShape tShape>
 class VectorMap {
  public:
   typedef tScalar Scalar;
-  static const VectorShape kShape = tShape;
+  static constexpr VectorShape kShape = tShape;
 
  protected:
   Scalar* data_;  // not owned.
@@ -113,7 +113,7 @@ template <typename tScalar, VectorShape tShape>
 class VectorDup {
  public:
   typedef tScalar Scalar;
-  static const VectorShape kShape = tShape;
+  static constexpr VectorShape kShape = tShape;
 
  protected:
   Scalar data_;
@@ -131,6 +131,7 @@ class VectorDup {
     assert(start >= 0);
     assert(start + len <= size_);
 
+    (void)start;
     return VectorDup(data_, len);
   }
 };

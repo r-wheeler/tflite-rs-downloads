@@ -74,13 +74,31 @@ struct TransposeImpl<MatrixMap<Scalar, Order>> {
 template <VectorShape Shape>
 struct TransposeImpl<OutputStageQuantizeDownInt32ToUint8ScalePC<Shape>> {
   typedef OutputStageQuantizeDownInt32ToUint8ScalePC<Shape> SrcType;
-  static const VectorShape TransposedShape = TransposeVectorShape<Shape>::Value;
+  static constexpr VectorShape TransposedShape =
+      TransposeVectorShape<Shape>::Value;
   typedef OutputStageQuantizeDownInt32ToUint8ScalePC<TransposedShape> DstType;
   static DstType Run(const SrcType& src) {
     DstType dst;
     dst.result_shift = src.result_shift;
     dst.result_offset = Transpose(src.result_offset);
     dst.result_mult_int = Transpose(src.result_mult_int);
+    return dst;
+  }
+};
+
+template <VectorShape Shape>
+struct TransposeImpl<OutputStageScaleInt32ByFixedPointAndExponentPC<Shape>> {
+  typedef OutputStageScaleInt32ByFixedPointAndExponentPC<Shape> SrcType;
+  static constexpr VectorShape TransposedShape =
+      TransposeVectorShape<Shape>::Value;
+  typedef OutputStageScaleInt32ByFixedPointAndExponentPC<TransposedShape>
+      DstType;
+  static DstType Run(const SrcType& src) {
+    DstType dst;
+    dst.result_fixedpoint_multiplier =
+        Transpose(src.result_fixedpoint_multiplier);
+    dst.result_exponent = Transpose(src.result_exponent);
+    dst.result_offset_after_shift = src.result_offset_after_shift;
     return dst;
   }
 };

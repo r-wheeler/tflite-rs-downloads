@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//      https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -57,6 +57,7 @@
 // narrower mantissas.
 
 namespace absl {
+ABSL_NAMESPACE_BEGIN
 namespace {
 
 template <typename FloatType>
@@ -551,9 +552,10 @@ CalculatedFloat CalculateFromParsedDecimal(
   int binary_exponent = Power10Exponent(parsed_decimal.exponent);
 
   // Discard bits that are inaccurate due to truncation error.  The magic
-  // `mantissa_width` constants below are justified in charconv_algorithm.md.
-  // They represent the number of bits in `wide_binary_mantissa` that are
-  // guaranteed to be unaffected by error propagation.
+  // `mantissa_width` constants below are justified in
+  // https://abseil.io/about/design/charconv. They represent the number of bits
+  // in `wide_binary_mantissa` that are guaranteed to be unaffected by error
+  // propagation.
   bool mantissa_exact;
   int mantissa_width;
   if (parsed_decimal.subrange_begin) {
@@ -671,7 +673,6 @@ from_chars_result FromCharsImpl(const char* first, const char* last,
     EncodeResult(calculated, negative, &result, &value);
     return result;
   }
-  return result;
 }
 }  // namespace
 
@@ -979,4 +980,5 @@ const int16_t kPower10ExponentTable[] = {
 };
 
 }  // namespace
+ABSL_NAMESPACE_END
 }  // namespace absl
